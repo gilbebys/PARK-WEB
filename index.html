@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> PARK WEB - Gestão com Backup</title>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <style>
+        :root { --primary: #1a237e; --secondary: #ff9800; --bg: #f0f2f5; --white: #ffffff; --success: #2e7d32; --danger: #c62828; --info: #0288d1; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        .navbar { background: var(--primary); color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        .logo { font-size: 22px; font-weight: bold; }
+        .logo span { color: var(--secondary); }
+        .nav-links button { background: transparent; border: 1px solid white; color: white; padding: 8px 12px; cursor: pointer; border-radius: 4px; margin-left: 5px; font-size: 12px; }
+        .nav-links button.active { background: var(--secondary); border-color: var(--secondary); }
+        .container { flex: 1; padding: 20px; overflow-y: auto; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .card { background: var(--white); border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        h3 { margin-top: 0; color: var(--primary); border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .form-group { margin-bottom: 12px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 13px; }
+        input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+        .btn { border: none; padding: 12px; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; text-transform: uppercase; margin-top: 5px; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-success { background: var(--success); color: white; }
+        .btn-info { background: var(--info); color: white; }
+        .btn-danger { background: var(--danger); color: white; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; }
+        .badge-m { background: var(--info); color: white; padding: 3px 7px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+        .modal-full { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center; z-index: 9999; }
+
+        @media print {
+            @page { size: 80mm auto; margin: 0; }
+            body * { visibility: hidden; }
+            #ticket-print, #ticket-print * { visibility: visible; }
+            #ticket-print { display: block !important; position: absolute; left: 0; top: 0; width: 72mm; padding: 4mm; font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.1; color: #000; }
+            .t-divider { border-top: 1px dashed #000; margin: 5px 0; }
+            .t-center { text-align: center; }
+            .t-spacer { height: 10mm; }
+        }
+        #ticket-print { display: none; }
+    </style>
+</head>
+<body>
+
+<div id="modal-abertura" class="modal-full">
+    <div class="card" style="width: 350px; text-align: center;">
+        <h2 style="color:var(--primary)">PARK WEB</h2>
+        <p>Abertura de Caixa (Troco):</p>
+        <input type="number" id="fundo-inicial" value="0.00" style="text-align: center; font-size: 24px;">
+        <button class="btn btn-primary" onclick="abrirCaixa()" style="margin-top:20px">INICIAR</button>
+    </div>
+</div>
+
+<div class="navbar no-print">
+    <div class="logo">PARK <span>WEB</span></div>
+    <div class="nav-links">
+        <button onclick="showTab('caixa')" class="active" id="btn-caixa">PDV</button>
+        <button onclick="showTab('patio')" id="btn-patio">PATIO</button>
+        <button onclick="showTab('mensalistas')" id="btn-mensalistas">MENSALISTAS</button>
+        <button onclick="showTab('relatorio')" id="btn-relatorio">FINANCEIRO</button>
+        <button onclick="acessoConfig()" id="btn-config">⚙️ BACKUP</button>
+    </div>
+</div>
+
+<div class="container no-print">
+    <div id="caixa" class="tab-content active">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div class="card">
+                <h3>📥 Entrada</h3>
+                <div class="form-group">
+                    <label>PLACA</label>
+                    <input type="text" id="in-placa" placeholder="ABC1234" maxlength="8" style="text-transform:uppercase" onkeyup="checkM(this.value)">
+                    <div id="status-m" style="margin-top:5px;"></div>
+                </div>
+                <div class="form-group"><label>VEICULO/COR</label><input type="text" id="in-veic" placeholder="Ex: Onix Prata"></div>
+                <button class="btn btn-primary" onclick="gerarEntrada()">GERAR TICKET</button>
+            </div>
+            <div class="card">
+                <h3>📤 Saida</h3>
+                <div class="form-group"><input type="text" id="out-id" placeholder="Placa ou ID" style="text-transform:uppercase"></div>
+                <button class="btn btn-success" onclick="gerarSaida()">CALCULAR</button>
+                <div id="pay-box" style="display:none; margin-top:15px; border-top:1px solid #eee; padding-top:10px;">
+                    <div id="val-info" style="margin-bottom:10px"></div>
+                    <div id="opcoes-p" style="display: grid; grid-template-columns: 1fr 1fr; gap:5px;">
+                        <button class="btn" style="background:#eee; color:#333" onclick="fin('DINHEIRO')">DINHEIRO</button>
+                        <button class="btn" style="background:#eee; color:#333" onclick="fin('PIX')">PIX</button>
+                        <button class="btn" style="background:#eee; color:#333" onclick="fin('DEBITO')">DEBITO</button>
+                        <button class="btn" style="background:#eee; color:#333" onclick="fin('CREDITO')">CREDITO</button>
+                    </div>
+                    <button id="btn-liberar-m" class="btn btn-info" style="display:none;" onclick="fin('MENSALISTA')">LIBERAR MENSALISTA</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="mensalistas" class="tab-content">
+        <div style="display: grid; grid-template-columns: 350px 1fr; gap: 20px;">
+            <div class="card">
+                <h3>Novo Mensalista</h3>
+                <div class="form-group"><label>NOME COMPLETO</label><input type="text" id="m-nome"></div>
+                <div class="form-group"><label>CPF</label><input type="text" id="m-cpf"></div>
+                <div class="form-group"><label>PLACA</label><input type="text" id="m-placa" style="text-transform:uppercase"></div>
+                <div class="form-group"><label>ENDEREÇO</label><input type="text" id="m-end"></div>
+                <button class="btn btn-info" onclick="addM()">CADASTRAR</button>
+            </div>
+            <div class="card">
+                <h3>Gestão de Cadastros</h3>
+                <table>
+                    <thead><tr><th>Nome</th><th>Placa</th><th>Ação</th></tr></thead>
+                    <tbody id="lista-m"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="patio" class="tab-content">
+        <div class="card">
+            <h3>Veiculos Atuais</h3>
+            <table>
+                <thead><tr><th>ID</th><th>Placa</th><th>Tipo</th><th>Entrada</th><th>Ação</th></tr></thead>
+                <tbody id="lista-p"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="relatorio" class="tab-content">
+        <div class="card" style="display:flex; justify-content: space-around; background: var(--primary); color:white">
+            <div>FUNDO: <span id="res-f">0</span></div>
+            <div>VENDAS: <span id="res-v">0</span></div>
+            <div>TOTAL: <span id="res-t">0</span></div>
+        </div>
+        <div class="card">
+            <h3>Vendas Recentes</h3>
+            <table id="hist-v">
+                <thead><tr><th>Placa</th><th>Tempo</th><th>Tipo</th><th>Valor</th></tr></thead>
+                <tbody id="lista-v"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="config" class="tab-content">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div class="card">
+                <h3>Backup do Sistema</h3>
+                <p>Baixe seus dados para segurança ou restaure um arquivo antigo.</p>
+                <button class="btn btn-info" onclick="exportarBackup()">BAIXAR BACKUP (.JSON)</button>
+                <div class="form-group" style="margin-top:15px">
+                    <label>Importar Arquivo:</label>
+                    <input type="file" id="importFile" accept=".json" onchange="importarBackup(event)">
+                </div>
+                <button class="btn btn-danger" onclick="limparSistema()" style="margin-top:20px">LIMPAR TUDO (RESET)</button>
+            </div>
+            <div class="card">
+                <h3>Dados do Estacionamento</h3>
+                <div class="form-group"><label>CNPJ</label><input type="text" id="cfg-cnpj"></div>
+                <div class="form-group"><label>Endereço</label><input type="text" id="cfg-end"></div>
+                <div class="form-group"><label>Valor 1ª Hora</label><input type="number" id="cfg-h1"></div>
+                <div class="form-group"><label>Fração (15 min)</label><input type="number" id="cfg-frac"></div>
+                <button class="btn btn-success" onclick="salvarConfig()">SALVAR CONFIGURAÇÕES</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="ticket-print">
+    <div class="t-center">
+        <strong style="font-size:16px;">NEW PARK</strong><br>
+        <span id="p-cnpj"></span><br><span id="p-end"></span>
+        <div class="t-divider"></div>
+        <strong id="t-titulo">TICKET</strong><br>
+        <div class="t-divider"></div>
+    </div>
+    <div id="t-corpo"></div>
+    <div class="t-center" id="t-bar"><svg id="barcode"></svg></div>
+    <div class="t-divider"></div>
+    <div class="t-center">OBRIGADO PELA PREFERÊNCIA!</div>
+</div>
+
+<script>
+    let dbM = []; let dbP = {}; let vendas = []; let fundo = 0; let idS = null;
+    let config = { cnpj: "00.000.000/0000-00", endereco: "Rua Exemplo, 123", h1: 20.00, fracao: 4.00, tolerancia: 15, senha: "1234" };
+
+    // --- PERSISTÊNCIA ---
+    function salvarNoStorage() {
+        const dados = { dbM, dbP, vendas, fundo, config };
+        localStorage.setItem('rodoParkData', JSON.stringify(dados));
+    }
+
+    function carregarDados() {
+        const salvo = localStorage.getItem('rodoParkData');
+        if (salvo) {
+            const d = JSON.parse(salvo);
+            dbM = d.dbM || [];
+            dbP = d.dbP || {};
+            vendas = d.vendas || [];
+            fundo = d.fundo || 0;
+            config = d.config || config;
+            // Datas precisam ser reconvertidas de String para Objeto Date
+            for(let k in dbP) dbP[k].entrada = new Date(dbP[k].entrada);
+            if(fundo > 0) document.getElementById('modal-abertura').style.display = 'none';
+        }
+        carregarConfigs();
+    }
+
+    // --- BACKUP ---
+    function exportarBackup() {
+        const dados = localStorage.getItem('rodoParkData');
+        if(!dados) return alert("Sem dados!");
+        const blob = new Blob([dados], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `rodo_park_backup_${new Date().toISOString().slice(0,10)}.json`;
+        a.click();
+    }
+
+    function importarBackup(e) {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            try {
+                const json = JSON.parse(ev.target.result);
+                if(confirm("Substituir dados atuais?")) {
+                    localStorage.setItem('rodoParkData', JSON.stringify(json));
+                    location.reload();
+                }
+            } catch(err) { alert("Arquivo inválido!"); }
+        };
+        reader.readAsText(file);
+    }
+
+    function limparSistema() {
+        if(confirm("APAGAR TUDO?")) { localStorage.clear(); location.reload(); }
+    }
+
+    // --- FUNÇÕES CORE ---
+    function abrirCaixa() {
+        fundo = parseFloat(document.getElementById('fundo-inicial').value) || 0;
+        document.getElementById('modal-abertura').style.display = 'none';
+        salvarNoStorage();
+    }
+
+    function acessoConfig() {
+        if(prompt("Senha:") === config.senha) showTab('config');
+        else alert("Erro!");
+    }
+
+    function salvarConfig() {
+        config.cnpj = document.getElementById('cfg-cnpj').value;
+        config.endereco = document.getElementById('cfg-end').value;
+        config.h1 = parseFloat(document.getElementById('cfg-h1').value);
+        config.fracao = parseFloat(document.getElementById('cfg-frac').value);
+        salvarNoStorage();
+        alert("Salvo!");
+    }
+
+    function carregarConfigs() {
+        document.getElementById('cfg-cnpj').value = config.cnpj;
+        document.getElementById('cfg-end').value = config.endereco;
+        document.getElementById('cfg-h1').value = config.h1;
+        document.getElementById('cfg-frac').value = config.fracao;
+    }
+
+    function showTab(id) {
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.nav-links button').forEach(b => b.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        if(document.getElementById('btn-'+id)) document.getElementById('btn-'+id).classList.add('active');
+        if(id === 'patio') renderP();
+        if(id === 'mensalistas') renderM();
+        if(id === 'relatorio') renderF();
+    }
+
+    function addM() {
+        const n = document.getElementById('m-nome').value;
+        const p = document.getElementById('m-placa').value.toUpperCase();
+        if(!n || !p) return alert("Preencha Nome e Placa!");
+        dbM.push({nome: n, placa: p, cpf: document.getElementById('m-cpf').value});
+        salvarNoStorage(); renderM();
+    }
+
+    function renderM() {
+        document.getElementById('lista-m').innerHTML = dbM.map((m, i) => `
+            <tr><td>${m.nome}</td><td>${m.placa}</td>
+            <td><button onclick="dbM.splice(${i},1);salvarNoStorage();renderM()" style="color:red">Remover</button></td></tr>
+        `).join('');
+    }
+
+    function checkM(p) {
+        const m = dbM.find(x => x.placa === p.toUpperCase());
+        document.getElementById('status-m').innerHTML = m ? `<span class="badge-m">MENSALISTA: ${m.nome}</span>` : "";
+    }
+
+    function gerarEntrada() {
+        const p = document.getElementById('in-placa').value.toUpperCase();
+        if(!p) return alert("Placa!");
+        const id = Math.floor(1000 + Math.random() * 9000);
+        const agora = new Date();
+        const m = dbM.find(x => x.placa === p);
+        dbP[id] = {id, placa: p, entrada: agora, isM: !!m};
+        
+        document.getElementById('p-cnpj').innerText = "CNPJ: " + config.cnpj;
+        document.getElementById('p-end').innerText = config.endereco;
+        document.getElementById('t-titulo').innerText = m ? "ENTRADA MENSALISTA" : "TICKET ENTRADA";
+        document.getElementById('t-corpo').innerHTML = `ID: #${id}<br>PLACA: ${p}<br>DATA: ${agora.toLocaleString()}`;
+        JsBarcode("#barcode", id.toString(), {height:30, width:1.5});
+        salvarNoStorage();
+        window.print();
+        document.getElementById('in-placa').value = "";
+    }
+
+    function gerarSaida() {
+        const busca = document.getElementById('out-id').value.toUpperCase();
+        let v = null;
+        for(let k in dbP) { if(k == busca || dbP[k].placa == busca) { v = dbP[k]; break; } }
+        if(!v) return alert("Não encontrado!");
+        idS = v.id;
+        const min = Math.ceil((new Date() - v.entrada)/60000);
+        let valor = 0;
+        if(!v.isM && min > config.tolerancia) {
+            valor = min <= 60 ? config.h1 : config.h1 + (Math.ceil((min-60)/15) * config.fracao);
+        }
+        v.tempTotal = min; v.valorTotal = valor;
+        document.getElementById('val-info').innerHTML = `PLACA: ${v.placa} | TEMPO: ${min}m<br><strong>VALOR: R$ ${valor.toFixed(2)}</strong>`;
+        document.getElementById('pay-box').style.display = 'block';
+        document.getElementById('opcoes-p').style.display = v.isM ? 'none' : 'grid';
+        document.getElementById('btn-liberar-m').style.display = v.isM ? 'block' : 'none';
+    }
+
+    function fin(metodo) {
+        const v = dbP[idS];
+        vendas.push({placa: v.placa, tempo: v.tempTotal, valor: v.valorTotal, modo: metodo});
+        delete dbP[idS];
+        salvarNoStorage();
+        alert("Saída Confirmada!");
+        document.getElementById('pay-box').style.display = 'none';
+        document.getElementById('out-id').value = "";
+        renderP();
+    }
+
+    function renderP() {
+        document.getElementById('lista-p').innerHTML = Object.values(dbP).map(v => `
+            <tr><td>#${v.id}</td><td>${v.placa}</td><td>${v.isM?'M':'A'}</td><td>${v.entrada.toLocaleTimeString()}</td>
+            <td><button onclick="document.getElementById('out-id').value='${v.id}';showTab('caixa');gerarSaida()">SAIDA</button></td></tr>
+        `).join('');
+    }
+
+    function renderF() {
+        const tV = vendas.reduce((a,b) => a+b.valor, 0);
+        document.getElementById('res-f').innerText = "R$ " + fundo.toFixed(2);
+        document.getElementById('res-v').innerText = "R$ " + tV.toFixed(2);
+        document.getElementById('res-t').innerText = "R$ " + (fundo + tV).toFixed(2);
+        document.getElementById('lista-v').innerHTML = vendas.map(v => `
+            <tr><td>${v.placa}</td><td>${v.tempo}m</td><td>${v.modo}</td><td>R$ ${v.valor.toFixed(2)}</td></tr>
+        `).join('');
+    }
+
+    window.onload = carregarDados;
+</script>
+</body>
+</html>
